@@ -28,9 +28,9 @@ local LOBBY_PLACE_ID = 108533757090220
 local scriptsByPlaceId = {
     [INGAME_PLACE_ID] = {
         --"https://github.com/mrratjal9-cloud/taman/raw/refs/heads/main/ANTI_AFK", --Begini juga bisa
-        "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/AutoUpgradeV1",--upgrade 
-        "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/SimplePlaceV3",--place unit
-        "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/AutoReplay_Map_Grave_V1",-- replay, jalan, speed, skip
+        "https://raw.githubusercontent.com/mrratjal9-cloud/TamanGrave/refs/heads/main/AutoUpgradeV1",--upgrade 
+        "https://raw.githubusercontent.com/mrratjal9-cloud/TamanGrave/refs/heads/main/SimplePlaceV3",--place unit
+        "https://raw.githubusercontent.com/mrratjal9-cloud/TamanGrave/refs/heads/main/AutoReplay_Map_Grave_V2",-- replay, jalan, speed, skip
         "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/LowGrafik_V12",-- low
         "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/ANTI_AFK",
         "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/AntiDC_V1"
