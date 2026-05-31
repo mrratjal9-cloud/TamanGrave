@@ -1,6 +1,7 @@
 -- ==========================================================
 -- AUTO REPLAY MAP GRAVE V5  (file: AutoReplay_Map_Grave_V3)
 -- Hasil revisi dari AutoReplay_Map_Grave_V2 (internal "V4")
+-- Ada Fitur matikan auto pilih map + bisa playagain saja
 -- ==========================================================
 -- AutoReplay_Map_Grave_V1/V2 TIDAK diubah/dirusak. File ini
 -- adalah file BARU dan ditaruh di branch main langsung.
@@ -86,7 +87,7 @@ local AutoJalanConfig = {
 -- Loop replay aktif kalau MINIMAL salah satunya = true.
 local ReplayConfig = {
 
-    AutoStart       = true,            -- [REPLAY] guna: AUTO PILIH GAMEMODE/DIFFICULTY waktu UI DifficultyVote muncul. | nilai: true = otomatis vote dif (TargetDif / random pool) lalu RestartGame / false = TIDAK auto-vote, gamemode dipilih MANUAL.
+    AutoStart       = false,            -- [REPLAY] guna: AUTO PILIH GAMEMODE/DIFFICULTY waktu UI DifficultyVote muncul. | nilai: true = otomatis vote dif (TargetDif / random pool) lalu RestartGame / false = TIDAK auto-vote, gamemode dipilih MANUAL.
     Playagain       = true,            -- [REPLAY] guna: AUTO KLIK tombol "Play Again" waktu UI GameEnd muncul.          | nilai: true = otomatis klik Play Again / false = TIDAK auto-klik (kamu harus klik manual). PISAH dari AutoStart -> bisa kombinasi bebas.
     TargetDif       = "dif_impossible",-- [REPLAY] guna: difficulty default yang di-vote saat ronde NORMAL (bukan ronde random). Hanya berlaku kalau AutoStart=true. | nilai: dif_easy / dif_normal / dif_hard / dif_insane / dif_impossible / dif_apocalypse. Map Grave biasanya "dif_impossible".
 
@@ -96,7 +97,7 @@ local ReplayConfig = {
     ClickVerifyT    = 0.8,             -- [REPLAY] guna: setelah klik Play Again, tunggu segini lalu cek apakah GameEnd hilang. | nilai: detik.
 
     -- ── Randomness mode (hanya berlaku kalau AutoStart=true) ──
-    RandomnessEnabled  = true,         -- [RANDOM] guna: aktifkan fitur random difficulty per N ronde.            | nilai: true = aktif / false = TargetDif dipakai semua ronde. (HANYA jalan kalau AutoStart=true)
+    RandomnessEnabled  = false,         -- [RANDOM] guna: aktifkan fitur random difficulty per N ronde.            | nilai: true = aktif / false = TargetDif dipakai semua ronde. (HANYA jalan kalau AutoStart=true)
     RandomnessInterval = 5,            -- [RANDOM] guna: tiap kelipatan N ronde, difficulty dipilih random.        | nilai: integer >= 1. Contoh 5 = ronde ke-5, 10, 15,... random. Set 1 = setiap ronde random.
     RandomnessPool     = {             -- [RANDOM] guna: list difficulty yang BOLEH dipakai saat ronde random.    | nilai: array string. Edit sesuai selera.
         "dif_easy",                    --   easy        | mode termudah
