@@ -1,0 +1,259 @@
+-- ==========================================
+-- CONFIGURATION
+-- ==========================================
+local Config = {
+    DefaultState = false -- true = Auto Rejoin langsung aktif, false = Harus tekan manual / toggle
+}
+
+-- ==========================================
+-- SERVICES & VARIABLES
+-- ==========================================
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local isAutoRejoinActive = Config.DefaultState
+local currentFoundUUID = nil
+local autoRejoinConnection = nil
+
+-- ==========================================
+-- 1. PEMBUATAN GUI
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoRejoinGUI_V2"
+ScreenGui.ResetOnSpawn = false
+
+local success = pcall(function() ScreenGui.Parent = CoreGui end)
+if not success then ScreenGui.Parent = PlayerGui end
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MainFrame.Position = UDim2.new(0.5, -120, 0.5, -80)
+MainFrame.Size = UDim2.new(0, 240, 0, 160)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+-- TOPBAR
+local TopBar = Instance.new("Frame")
+TopBar.Parent = MainFrame
+TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TopBar.Size = UDim2.new(1, 0, 0, 30)
+TopBar.BorderSizePixel = 0
+
+local TopUICorner = Instance.new("UICorner")
+TopUICorner.CornerRadius = UDim.new(0, 8)
+TopUICorner.Parent = TopBar
+
+local TopBarFix = Instance.new("Frame")
+TopBarFix.Parent = TopBar
+TopBarFix.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TopBarFix.Position = UDim2.new(0, 0, 1, -5)
+TopBarFix.Size = UDim2.new(1, 0, 0, 5)
+TopBarFix.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel")
+Title.Parent = TopBar
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Size = UDim2.new(0, 120, 1, 0)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "Auto Rejoin V2"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = TopBar
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+CloseBtn.Size = UDim2.new(0, 30, 1, 0)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 85, 85)
+CloseBtn.TextSize = 14
+
+local MinBtn = Instance.new("TextButton")
+MinBtn.Parent = TopBar
+MinBtn.BackgroundTransparency = 1
+MinBtn.Position = UDim2.new(1, -60, 0, 0)
+MinBtn.Size = UDim2.new(0, 30, 1, 0)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.TextSize = 16
+
+-- KONTEN GUI
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Parent = MainFrame
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0, 10, 0, 35)
+StatusLabel.Size = UDim2.new(1, -20, 0, 30)
+StatusLabel.Font = Enum.Font.GothamSemibold
+StatusLabel.Text = "Status: Menunggu Notifikasi..."
+StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StatusLabel.TextSize = 12
+StatusLabel.TextWrapped = true
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = MainFrame
+ToggleBtn.BackgroundColor3 = isAutoRejoinActive and Color3.fromRGB(85, 255, 127) or Color3.fromRGB(255, 85, 85)
+ToggleBtn.Position = UDim2.new(0, 10, 0, 70)
+ToggleBtn.Size = UDim2.new(1, -20, 0, 35)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Text = isAutoRejoinActive and "Auto Rejoin: ON" or "Auto Rejoin: OFF"
+ToggleBtn.TextColor3 = Color3.fromRGB(25, 25, 25)
+ToggleBtn.TextSize = 14
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
+
+local ManualBtn = Instance.new("TextButton")
+ManualBtn.Parent = MainFrame
+ManualBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+ManualBtn.Position = UDim2.new(0, 10, 0, 115)
+ManualBtn.Size = UDim2.new(1, -20, 0, 35)
+ManualBtn.Font = Enum.Font.GothamBold
+ManualBtn.Text = "MANUAL REJOIN (TEST)"
+ManualBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ManualBtn.TextSize = 14
+Instance.new("UICorner", ManualBtn).CornerRadius = UDim.new(0, 6)
+
+-- ==========================================
+-- 2. SISTEM DRAG GUI
+-- ==========================================
+local dragging, dragInput, dragStart, startPos
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging, dragStart, startPos = true, input.Position, MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+TopBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- ==========================================
+-- 3. FUNGSI EKSEKUSI REMOTE (DEBUGGER)
+-- ==========================================
+local function executeRejoin(uuid)
+    if not uuid or uuid == "" then
+        StatusLabel.Text = "Error: UUID Kosong!"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 85, 85)
+        warn("[DEBUG AUTO-REJOIN] Gagal mengeksekusi, UUID kosong atau belum terdeteksi.")
+        return
+    end
+
+    print("[DEBUG AUTO-REJOIN] Mencoba mengirim RemoteEvent dengan UUID: " .. tostring(uuid))
+    local reNotifyEvent = ReplicatedStorage:FindFirstChild("ReNotifyEvent")
+    
+    if reNotifyEvent then
+        -- Trigger Remote Server
+        reNotifyEvent:FireServer("NotificationOptionSelected", uuid, "Accept")
+        print("[DEBUG AUTO-REJOIN] Berhasil FireServer -> NotificationOptionSelected | " .. tostring(uuid) .. " | Accept")
+        
+        StatusLabel.Text = "Command Dikirim (Cek Console F9)"
+        StatusLabel.TextColor3 = Color3.fromRGB(85, 255, 127)
+    else
+        warn("[DEBUG AUTO-REJOIN] Gagal: ReNotifyEvent tidak ditemukan di ReplicatedStorage!")
+        StatusLabel.Text = "Error: Remote tidak ada!"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 85, 85)
+    end
+end
+
+-- ==========================================
+-- 4. LOGIKA DETEKSI NOTIFIKASI
+-- ==========================================
+local function handleNotification(child)
+    task.wait(0.5) -- Tunggu UI render full
+    
+    if child:IsA("Frame") or child:IsA("GuiObject") then
+        local label = child:FindFirstChild("Label")
+        if label and label:IsA("TextLabel") and label.Text == "Match still in progress" then
+            currentFoundUUID = child.Name
+            
+            print("========================================")
+            print("[DEBUG AUTO-REJOIN] Notifikasi Muncul!")
+            print("[DEBUG AUTO-REJOIN] UUID yang diekstrak: " .. tostring(currentFoundUUID))
+            print("========================================")
+            
+            if isAutoRejoinActive then
+                StatusLabel.Text = "Auto Menekan Rejoin..."
+                executeRejoin(currentFoundUUID)
+            else
+                StatusLabel.Text = "Notifikasi Siap! Tekan Manual."
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
+            end
+        end
+    end
+end
+
+local function setupDetection()
+    local notifyClientFolder = PlayerGui:WaitForChild("Re:NotifyClient", 15)
+    if notifyClientFolder then
+        -- Cek yang sudah ada di layar
+        for _, child in ipairs(notifyClientFolder:GetChildren()) do
+            task.spawn(handleNotification, child)
+        end
+        -- Cek yang baru muncul
+        autoRejoinConnection = notifyClientFolder.ChildAdded:Connect(handleNotification)
+        print("[DEBUG AUTO-REJOIN] Script berhasil diinjeksi. Menunggu notifikasi.")
+    else
+        warn("[DEBUG AUTO-REJOIN] Timeout: Folder Re:NotifyClient tidak ditemukan!")
+        StatusLabel.Text = "Gagal menemukan Folder UI."
+    end
+end
+
+-- ==========================================
+-- 5. KONTROL TOMBOL GUI
+-- ==========================================
+ToggleBtn.MouseButton1Click:Connect(function()
+    isAutoRejoinActive = not isAutoRejoinActive
+    if isAutoRejoinActive then
+        ToggleBtn.Text = "Auto Rejoin: ON"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(85, 255, 127)
+    else
+        ToggleBtn.Text = "Auto Rejoin: OFF"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(255, 85, 85)
+    end
+end)
+
+ManualBtn.MouseButton1Click:Connect(function()
+    executeRejoin(currentFoundUUID)
+end)
+
+local isMinimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MainFrame.Size = UDim2.new(0, 240, 0, 30)
+        MainFrame.BackgroundTransparency = 1
+        StatusLabel.Visible, ToggleBtn.Visible, ManualBtn.Visible = false, false, false
+    else
+        MainFrame.Size = UDim2.new(0, 240, 0, 160)
+        MainFrame.BackgroundTransparency = 0
+        StatusLabel.Visible, ToggleBtn.Visible, ManualBtn.Visible = true, true, true
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    if autoRejoinConnection then autoRejoinConnection:Disconnect() end
+    ScreenGui:Destroy()
+end)
+
+setupDetection()
