@@ -49,15 +49,6 @@ local ROTATION_MODE = "smooth"             -- [USER EDIT/E-ROT]      guna: mode 
 local DefaultStateMinimize = true          -- [USER EDIT/G-GUI]      guna: state GUI saat eksekusi pertama.            | nilai: true = ON minimize (badge kecil) / false = OFF minimize (panel lebar). | efek: true (default) = hemat tempat saat banyak instance; false = panel langsung kebuka penuh 380x470.
 
 -- [H] AUTO SELL (V3) -----------------------------------------------------
--- Fitur otomatis menjual (sell) unit yang sudah ditaruh, dipicu saat WAVE
--- tertentu tercapai. Ada 2 mode independen:
---   (1) SELL ALL    -> pakai remote ReplicatedStorage.RemoteFunctions.SellAll
---                      (jual SEMUA unit milik LocalPlayer tanpa pandang tipe).
---                      Tidak butuh UnitId.
---   (2) SELL TARGET -> pakai remote ReplicatedStorage.RemoteFunctions.SellUnit
---                      yang butuh argumen UnitId. V3 otomatis jual unit
---                      yg namanya == TARGET_UNIT [A] (UnitId di-capture
---                      otomatis dari hasil PlaceUnit + scan Workspace/UI).
 local AUTO_SELL_ENABLED        = true     -- [USER EDIT/H-SELL]  guna: master switch fitur auto sell.                                  | nilai: true / false.            | efek: false = SEMUA logic sell di-skip total (V3 jadi behave seperti V1).
 local SELL_ALL_AT_WAVE         = 0        -- [USER EDIT/H-SELL]  guna: wave dimana SEMUA unit di-sell (tanpa pandang tipe, lewat SellAll). | nilai: angka wave (>=1) / 0 = matikan trigger ini. | efek: pas wave == nilai ini, remote SellAll di-invoke 1x. Cocok utk clear board total.
 local SELL_TARGET_AT_WAVE      = 9        -- [USER EDIT/H-SELL]  guna: wave dimana hanya unit yg namanya == TARGET_UNIT [A] yg di-sell. | nilai: angka wave (>=1) / 0 = matikan trigger ini. | efek: pas wave == nilai ini, V3 loop semua unit kamu yg name match TARGET_UNIT lalu invoke SellUnit(UnitId) per unit. Sisa unit tetap di board.
@@ -367,10 +358,10 @@ local SLOTS_PRIORITY = {
 
 local SLOTS_MAIN = {
     -- LAYER 1
-    { -340.8159484863281, 61.68030548095703, -706.2675170898438 },
-    { -341.35125732421875, 61.68030548095703, -701.8102416992188 },
-    { -343.9692687988281, 61.680301666259766, -709.2645263671875 },
-    --{ -339.8414611816406, 61.68030548095703, -699.0494384765625 },
+    { -347.5519104003906, 61.68030548095703, -713.0230102539062 },
+    { -339.3968811035156, 61.68030548095703, -704.8723754882812 },
+    { -338.868408203125, 61.68030548095703, -700.6256713867188 },
+    { -339.3968811035156, 61.68030548095703, -704.8723754882812 },
     --{ -335.41595458984375, 61.93030548095703, -836.6087646484375 },
     --{ -335.41595458984375, 61.93030548095703, -834.9481201171875 },
     -- LAYER 2
