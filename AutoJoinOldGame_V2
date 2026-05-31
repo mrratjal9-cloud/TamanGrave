@@ -1,0 +1,565 @@
+-- ==========================================================
+-- AUTO JOIN OLD GAME V2  (file: AutoJoinOldGame_V2)
+-- Hasil revisi dari AutoJoinOldGame_V1.
+-- ==========================================================
+-- AutoJoinOldGame_V1 TIDAK diubah/dirusak. File ini adalah
+-- file BARU dan di-push langsung ke branch main.
+--
+-- PERUBAHAN UTAMA DARI V1 -> V2:
+--   [METHOD] Cara KLIK rejoin DISAMAKAN dengan
+--            AutoReplay_Map_Grave_V3 -> 3-method virtual click:
+--              1. clickViaConnections (getconnections + :Fire / firesignal)
+--              2. clickViaFiresignal  (firesignal langsung di event)
+--              3. clickViaVIM         (VirtualInputManager
+--                                      :SendMouseButtonEvent)
+--            Plus klik child "Title" di dalam tombol kalau ada
+--            (sama persis pola V3).
+--
+--   [TARGET] V1 cuma FireServer ke ReNotifyEvent.
+--            V2 cari tombol "Accept" / opsi rejoin di dalam
+--            frame notifikasi (PlayerGui."Re:NotifyClient".<UUID>)
+--            lalu KLIK tombolnya pakai 3-method di atas.
+--            Kalau tombol GUI gak ketemu, fallback ke FireServer
+--            (warisan V1) supaya tetep work.
+--
+--   [GUI]    Tampilan & layout sama seperti V1 (drag, toggle,
+--            manual, minimize, close). Cuma judul ganti jadi
+--            "Auto Rejoin V2".
+--
+-- CATATAN: Logika DETEKSI notifikasi (folder "Re:NotifyClient"
+-- + Label "Match still in progress") TIDAK diubah. Yang
+-- diubah hanya cara EKSEKUSI rejoin-nya.
+-- ==========================================================
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║                       CONFIGURATION                       ║
+-- ╚══════════════════════════════════════════════════════════╝
+
+-- ── [KATEGORI 1] STATE DEFAULT ─────────────────────────────
+-- Pengaturan kondisi awal Auto Rejoin saat script dieksekusi.
+local Config = {
+    DefaultState = false,      -- [STATE] guna: state Auto Rejoin saat eksekusi pertama.                       | nilai: true = Auto Rejoin langsung ON / false = OFF (harus tekan toggle dulu).
+}
+
+-- ── [KATEGORI 2] METHOD KLIK ───────────────────────────────
+-- Pengaturan cara klik tombol rejoin (mirroring AutoReplay_Map_Grave_V3).
+local ClickConfig = {
+    AllowVIM        = true,    -- [CLICK] guna: izinkan pakai VirtualInputManager untuk klik tombol.           | nilai: true = boleh (lebih "mirip user"), false = hanya firesignal/getconnections.
+    ClickTitleChild = true,    -- [CLICK] guna: ikut klik child "Title" di dalam tombol kalau ada.             | nilai: true = ikut klik (sesuai pola V3) / false = hanya tombol utama.
+    UseFireServerFallback = true, -- [CLICK] guna: fallback ke FireServer kalau tombol GUI tidak ditemukan.   | nilai: true = pakai (lebih aman, jangan sampai gagal rejoin) / false = jangan, klik harus dari GUI doang.
+    ClickRetry      = 3,       -- [CLICK] guna: jumlah percobaan klik (tiap percobaan pakai layer berbeda).     | nilai: integer >= 1. Disarankan 3 (Connections -> Firesignal -> VIM).
+    ClickGap        = 0.15,    -- [CLICK] guna: jeda antar percobaan klik (detik).                              | nilai: detik. 0.1-0.3 wajar.
+}
+
+-- ── [KATEGORI 3] DETEKSI TOMBOL DI NOTIFIKASI ──────────────
+-- Cari tombol Accept di dalam frame notifikasi.
+local DetectConfig = {
+    AcceptButtonNames = {      -- [DETECT] guna: daftar nama tombol yang dianggap "Accept" (cek child by name). | nilai: array string. Tambahin sesuai struktur game kalau perlu.
+        "Accept",              --   nama paling umum
+        "AcceptBtn",
+        "Yes",
+        "Confirm",
+        "OK",
+        "Ok",
+        "Rejoin",
+        "Join",
+    },
+    AcceptButtonText = {       -- [DETECT] guna: daftar teks (case-insensitive) yang dianggap "Accept" kalau cari by Text. | nilai: array string lowercase.
+        "accept",
+        "yes",
+        "confirm",
+        "ok",
+        "rejoin",
+        "join",
+        "terima",
+    },
+    SearchDepth = 6,           -- [DETECT] guna: kedalaman rekursi cari tombol di dalam frame notifikasi.       | nilai: integer. 3-8 wajar.
+    NotifyFolderName = "Re:NotifyClient", -- [DETECT] guna: nama folder notifikasi di PlayerGui.                | nilai: string. JANGAN diubah kecuali game update path-nya.
+    NotifyFolderTimeout = 15,  -- [DETECT] guna: timeout WaitForChild folder notifikasi.                         | nilai: detik.
+    MatchLabelText = "Match still in progress", -- [DETECT] guna: teks Label yang dianggap notifikasi rejoin.   | nilai: string. JANGAN diubah kecuali game update.
+}
+
+-- ── [KATEGORI 4] REMOTE FALLBACK (Warisan V1) ──────────────
+-- Dipakai cuma kalau tombol GUI tidak ketemu DAN UseFireServerFallback=true.
+local RemoteConfig = {
+    EventName       = "ReNotifyEvent",        -- [REMOTE] guna: nama RemoteEvent di ReplicatedStorage.          | nilai: string. JANGAN diubah kecuali game update.
+    ActionId        = "NotificationOptionSelected", -- [REMOTE] guna: argumen #1 yang dikirim ke server.        | nilai: string.
+    AcceptOption    = "Accept",               -- [REMOTE] guna: argumen "pilihan" (Accept/Decline).             | nilai: "Accept" / "Decline".
+}
+
+-- ── [KATEGORI 5] DEBUG ─────────────────────────────────────
+local DEBUG_PRINT = true       -- [DEBUG] guna: print log ke F9 console.                                       | nilai: true = aktif / false = silent.
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║                         SERVICES                          ║
+-- ╚══════════════════════════════════════════════════════════╝
+local Players              = game:GetService("Players")
+local CoreGui              = game:GetService("CoreGui")
+local UserInputService     = game:GetService("UserInputService")
+local ReplicatedStorage    = game:GetService("ReplicatedStorage")
+local VirtualInputManager  = nil
+pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+local function dprint(...)
+    if DEBUG_PRINT then print("[AutoJoinOldGameV2]", ...) end
+end
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║                          STATE                            ║
+-- ╚══════════════════════════════════════════════════════════╝
+local isAutoRejoinActive   = Config.DefaultState
+local currentFoundUUID     = nil
+local currentFoundFrame    = nil   -- V2: simpen REFERENSI Frame notifikasi (bukan cuma UUID)
+local autoRejoinConnection = nil
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║       VIRTUAL CLICK 3-METHOD (port dari V3)               ║
+-- ╚══════════════════════════════════════════════════════════╝
+-- 100% pola yang sama dengan AutoReplay_Map_Grave_V3.
+-- Method 1: getconnections + :Fire() / firesignal(c)
+local function clickViaConnections(button)
+    if typeof(getconnections) ~= "function" then return false end
+    local fired = false
+    local signals = { "MouseButton1Click", "Activated", "MouseButton1Down", "MouseButton1Up" }
+    for _, sig in ipairs(signals) do
+        pcall(function()
+            local ev = button[sig]
+            if ev then
+                local conns = getconnections(ev)
+                if conns then
+                    for _, c in ipairs(conns) do
+                        local ok = pcall(function() c:Fire() end)
+                        if not ok and typeof(firesignal) == "function" then
+                            pcall(function() firesignal(c) end)
+                        end
+                        fired = true
+                    end
+                end
+            end
+        end)
+    end
+    return fired
+end
+
+-- Method 2: firesignal langsung di event tombolnya
+local function clickViaFiresignal(button)
+    if typeof(firesignal) ~= "function" then return false end
+    local signals = { "MouseButton1Down", "MouseButton1Up", "MouseButton1Click", "Activated" }
+    local fired = false
+    for _, sig in ipairs(signals) do
+        pcall(function()
+            if button[sig] then
+                firesignal(button[sig])
+                fired = true
+            end
+        end)
+    end
+    return fired
+end
+
+-- Method 3: VirtualInputManager (paling natural, butuh izin)
+local function clickViaVIM(button)
+    if not ClickConfig.AllowVIM then return false end
+    if not VirtualInputManager then return false end
+    local ok = pcall(function()
+        local pos  = button.AbsolutePosition
+        local size = button.AbsoluteSize
+        local x = pos.X + size.X / 2
+        local y = pos.Y + size.Y / 2
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true,  game, 0)
+        task.wait(0.07)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    end)
+    return ok
+end
+
+-- Kombinator 3-method dengan attempt-aware (sama persis V3).
+local function virtualClick(button, attempt)
+    if not button then return end
+    attempt = attempt or 1
+
+    local targets = { button }
+    if ClickConfig.ClickTitleChild then
+        local title = button:FindFirstChild("Title")
+        if title and (title:IsA("TextLabel") or title:IsA("ImageLabel")
+                      or title:IsA("TextButton") or title:IsA("ImageButton")) then
+            table.insert(targets, title)
+        end
+    end
+
+    for _, t in ipairs(targets) do
+        if attempt == 1 then
+            clickViaConnections(t)
+            clickViaFiresignal(t)
+        elseif attempt == 2 then
+            clickViaFiresignal(t)
+            clickViaVIM(t)
+        else
+            clickViaVIM(t)
+            clickViaConnections(t)
+            clickViaFiresignal(t)
+        end
+    end
+end
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║          PENCARIAN TOMBOL ACCEPT DI NOTIFIKASI            ║
+-- ╚══════════════════════════════════════════════════════════╝
+-- Cek apakah obj kelihatan seperti tombol Accept (by name / text).
+local function looksLikeAccept(obj)
+    if not obj then return false end
+
+    -- match by name
+    for _, n in ipairs(DetectConfig.AcceptButtonNames) do
+        if obj.Name == n then return true end
+    end
+
+    -- match by text (kalau dia TextButton/TextLabel)
+    if obj:IsA("TextButton") or obj:IsA("TextLabel") then
+        local t = string.lower(tostring(obj.Text or ""))
+        for _, kw in ipairs(DetectConfig.AcceptButtonText) do
+            if t == kw then return true end
+            if string.find(t, kw, 1, true) then return true end
+        end
+    end
+
+    return false
+end
+
+-- DFS rekursif terbatas kedalaman, prioritas TextButton/ImageButton.
+local function findAcceptButton(root, depth)
+    if not root or depth > DetectConfig.SearchDepth then return nil end
+
+    -- Pertama cek anak langsung dulu (BFS-style di level dangkal lebih
+    -- akurat, biar kalau ada banyak label "Accept" yang nyangkut, yang
+    -- ke-pilih adalah yang paling dekat ke root).
+    for _, child in ipairs(root:GetChildren()) do
+        if (child:IsA("TextButton") or child:IsA("ImageButton")) and looksLikeAccept(child) then
+            return child
+        end
+    end
+
+    -- Lalu cek anak lain yang bukan button tapi name-nya cocok
+    -- (kadang button dibungkus Frame "Accept" lalu di dalamnya ada
+    -- TextButton/ImageButton beneran).
+    for _, child in ipairs(root:GetChildren()) do
+        if looksLikeAccept(child) then
+            -- cari turunan tipe button
+            for _, desc in ipairs(child:GetDescendants()) do
+                if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+                    return desc
+                end
+            end
+            -- kalau gak ada turunan button, return obj-nya sendiri
+            -- (mungkin ImageLabel yg dibungkus signal di luar)
+            return child
+        end
+    end
+
+    -- Rekursi ke anak-anak
+    for _, child in ipairs(root:GetChildren()) do
+        local found = findAcceptButton(child, depth + 1)
+        if found then return found end
+    end
+
+    return nil
+end
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║                    EKSEKUSI REJOIN (V2)                   ║
+-- ╚══════════════════════════════════════════════════════════╝
+-- LANGKAH:
+--   1) cek currentFoundFrame masih hidup (Parent ~= nil).
+--   2) cari tombol Accept di dalam frame -> KLIK pakai virtualClick
+--      (3-method, sama persis V3) sebanyak ClickRetry kali.
+--   3) kalau tombol gak ketemu DAN UseFireServerFallback=true,
+--      fallback ke FireServer (warisan V1) supaya tetep work.
+--   4) update StatusLabel.
+local function executeRejoin()
+    local statusOk, statusErr
+
+    -- (a) Validasi UUID
+    if not currentFoundUUID or currentFoundUUID == "" then
+        statusErr = "Error: UUID Kosong!"
+        warn("[AutoJoinOldGameV2] Gagal: UUID kosong / belum terdeteksi.")
+        return false, statusErr
+    end
+
+    dprint("Mencoba rejoin UUID:", currentFoundUUID)
+
+    -- (b) Coba klik tombol GUI dulu
+    local clickedViaGui = false
+    if currentFoundFrame and currentFoundFrame.Parent then
+        local btn = findAcceptButton(currentFoundFrame, 0)
+        if btn then
+            dprint("Tombol Accept ditemukan:", btn:GetFullName())
+            for i = 1, ClickConfig.ClickRetry do
+                virtualClick(btn, i)
+                clickedViaGui = true
+                if i < ClickConfig.ClickRetry then task.wait(ClickConfig.ClickGap) end
+                -- kalau notifikasi udah ilang, berhenti retry
+                if not (currentFoundFrame and currentFoundFrame.Parent) then break end
+            end
+            statusOk = "Klik GUI terkirim (3-method V3)"
+        else
+            dprint("Tombol Accept TIDAK ditemukan di dalam frame notifikasi.")
+        end
+    else
+        dprint("Frame notifikasi sudah hilang / belum tertangkap.")
+    end
+
+    -- (c) Fallback FireServer (warisan V1) kalau klik GUI gagal
+    if not clickedViaGui and ClickConfig.UseFireServerFallback then
+        local reNotifyEvent = ReplicatedStorage:FindFirstChild(RemoteConfig.EventName)
+        if reNotifyEvent then
+            local ok = pcall(function()
+                reNotifyEvent:FireServer(RemoteConfig.ActionId, currentFoundUUID, RemoteConfig.AcceptOption)
+            end)
+            if ok then
+                dprint("Fallback FireServer terkirim ->", RemoteConfig.ActionId, currentFoundUUID, RemoteConfig.AcceptOption)
+                statusOk = "Fallback FireServer terkirim"
+            else
+                statusErr = "Error: FireServer gagal!"
+                warn("[AutoJoinOldGameV2] FireServer error.")
+            end
+        else
+            statusErr = "Error: Remote tidak ada!"
+            warn("[AutoJoinOldGameV2] ReNotifyEvent tidak ditemukan di ReplicatedStorage.")
+        end
+    end
+
+    if statusOk then return true, statusOk end
+    if statusErr then return false, statusErr end
+    return false, "Tidak ada aksi (cek log F9)"
+end
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║                       PEMBUATAN GUI                       ║
+-- ╚══════════════════════════════════════════════════════════╝
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoRejoinGUI_V2_Click3"
+ScreenGui.ResetOnSpawn = false
+local ok = pcall(function() ScreenGui.Parent = CoreGui end)
+if not ok then ScreenGui.Parent = PlayerGui end
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MainFrame.Position = UDim2.new(0.5, -120, 0.5, -80)
+MainFrame.Size = UDim2.new(0, 240, 0, 160)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+-- TopBar
+local TopBar = Instance.new("Frame")
+TopBar.Parent = MainFrame
+TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TopBar.Size = UDim2.new(1, 0, 0, 30)
+TopBar.BorderSizePixel = 0
+local TopUICorner = Instance.new("UICorner")
+TopUICorner.CornerRadius = UDim.new(0, 8)
+TopUICorner.Parent = TopBar
+
+local TopBarFix = Instance.new("Frame")
+TopBarFix.Parent = TopBar
+TopBarFix.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TopBarFix.Position = UDim2.new(0, 0, 1, -5)
+TopBarFix.Size = UDim2.new(1, 0, 0, 5)
+TopBarFix.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel")
+Title.Parent = TopBar
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Size = UDim2.new(0, 160, 1, 0)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "Auto Rejoin V2 (Click3)"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 13
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = TopBar
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+CloseBtn.Size = UDim2.new(0, 30, 1, 0)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 85, 85)
+CloseBtn.TextSize = 14
+
+local MinBtn = Instance.new("TextButton")
+MinBtn.Parent = TopBar
+MinBtn.BackgroundTransparency = 1
+MinBtn.Position = UDim2.new(1, -60, 0, 0)
+MinBtn.Size = UDim2.new(0, 30, 1, 0)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.TextSize = 16
+
+-- Konten
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Parent = MainFrame
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0, 10, 0, 35)
+StatusLabel.Size = UDim2.new(1, -20, 0, 30)
+StatusLabel.Font = Enum.Font.GothamSemibold
+StatusLabel.Text = "Status: Menunggu Notifikasi..."
+StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StatusLabel.TextSize = 12
+StatusLabel.TextWrapped = true
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = MainFrame
+ToggleBtn.BackgroundColor3 = isAutoRejoinActive and Color3.fromRGB(85, 255, 127) or Color3.fromRGB(255, 85, 85)
+ToggleBtn.Position = UDim2.new(0, 10, 0, 70)
+ToggleBtn.Size = UDim2.new(1, -20, 0, 35)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Text = isAutoRejoinActive and "Auto Rejoin: ON" or "Auto Rejoin: OFF"
+ToggleBtn.TextColor3 = Color3.fromRGB(25, 25, 25)
+ToggleBtn.TextSize = 14
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
+
+local ManualBtn = Instance.new("TextButton")
+ManualBtn.Parent = MainFrame
+ManualBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+ManualBtn.Position = UDim2.new(0, 10, 0, 115)
+ManualBtn.Size = UDim2.new(1, -20, 0, 35)
+ManualBtn.Font = Enum.Font.GothamBold
+ManualBtn.Text = "MANUAL REJOIN (TEST)"
+ManualBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ManualBtn.TextSize = 14
+Instance.new("UICorner", ManualBtn).CornerRadius = UDim.new(0, 6)
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║                       SISTEM DRAG GUI                     ║
+-- ╚══════════════════════════════════════════════════════════╝
+local dragging, dragInput, dragStart, startPos
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging, dragStart, startPos = true, input.Position, MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+TopBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║              LOGIKA DETEKSI NOTIFIKASI (sama V1)          ║
+-- ╚══════════════════════════════════════════════════════════╝
+-- V2: SELAIN simpan UUID, kita SIMPAN juga referensi Frame
+-- supaya bisa cari tombol GUI di dalamnya untuk diklik.
+local function handleNotification(child)
+    task.wait(0.5) -- tunggu UI render full
+
+    if child:IsA("Frame") or child:IsA("GuiObject") then
+        local label = child:FindFirstChild("Label")
+        if label and label:IsA("TextLabel") and label.Text == DetectConfig.MatchLabelText then
+            currentFoundUUID  = child.Name
+            currentFoundFrame = child   -- V2: simpen frame ref!
+
+            print("========================================")
+            print("[AutoJoinOldGameV2] Notifikasi Muncul!")
+            print("[AutoJoinOldGameV2] UUID:", tostring(currentFoundUUID))
+            print("[AutoJoinOldGameV2] Frame:", child:GetFullName())
+            print("========================================")
+
+            if isAutoRejoinActive then
+                StatusLabel.Text = "Auto Klik (3-method)..."
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                local ok2, msg = executeRejoin()
+                StatusLabel.Text = (ok2 and "OK: " or "FAIL: ") .. tostring(msg)
+                StatusLabel.TextColor3 = ok2 and Color3.fromRGB(85, 255, 127) or Color3.fromRGB(255, 85, 85)
+            else
+                StatusLabel.Text = "Notif siap! Tekan Manual."
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 170, 0)
+            end
+        end
+    end
+end
+
+local function setupDetection()
+    local notifyClientFolder = PlayerGui:WaitForChild(DetectConfig.NotifyFolderName, DetectConfig.NotifyFolderTimeout)
+    if notifyClientFolder then
+        for _, child in ipairs(notifyClientFolder:GetChildren()) do
+            task.spawn(handleNotification, child)
+        end
+        autoRejoinConnection = notifyClientFolder.ChildAdded:Connect(handleNotification)
+        dprint("Script ter-inject. Menunggu notifikasi.")
+    else
+        warn("[AutoJoinOldGameV2] Timeout: Folder " .. DetectConfig.NotifyFolderName .. " tidak ditemukan!")
+        StatusLabel.Text = "Gagal menemukan Folder UI."
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 85, 85)
+    end
+end
+
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║                    KONTROL TOMBOL GUI                     ║
+-- ╚══════════════════════════════════════════════════════════╝
+ToggleBtn.MouseButton1Click:Connect(function()
+    isAutoRejoinActive = not isAutoRejoinActive
+    if isAutoRejoinActive then
+        ToggleBtn.Text = "Auto Rejoin: ON"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(85, 255, 127)
+    else
+        ToggleBtn.Text = "Auto Rejoin: OFF"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(255, 85, 85)
+    end
+end)
+
+ManualBtn.MouseButton1Click:Connect(function()
+    StatusLabel.Text = "Manual klik (3-method)..."
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    local ok2, msg = executeRejoin()
+    StatusLabel.Text = (ok2 and "OK: " or "FAIL: ") .. tostring(msg)
+    StatusLabel.TextColor3 = ok2 and Color3.fromRGB(85, 255, 127) or Color3.fromRGB(255, 85, 85)
+end)
+
+local isMinimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MainFrame.Size = UDim2.new(0, 240, 0, 30)
+        MainFrame.BackgroundTransparency = 1
+        StatusLabel.Visible, ToggleBtn.Visible, ManualBtn.Visible = false, false, false
+    else
+        MainFrame.Size = UDim2.new(0, 240, 0, 160)
+        MainFrame.BackgroundTransparency = 0
+        StatusLabel.Visible, ToggleBtn.Visible, ManualBtn.Visible = true, true, true
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    if autoRejoinConnection then autoRejoinConnection:Disconnect() end
+    ScreenGui:Destroy()
+end)
+
+setupDetection()
