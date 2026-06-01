@@ -29,7 +29,7 @@ local scriptsByPlaceId = {
     [INGAME_PLACE_ID] = {
         --"https://github.com/mrratjal9-cloud/taman/raw/refs/heads/main/ANTI_AFK", --Begini juga bisa
         "https://raw.githubusercontent.com/mrratjal9-cloud/TamanGrave/refs/heads/main/AutoUpgradeCoopV1",--upgrade 
-        "https://raw.githubusercontent.com/mrratjal9-cloud/TamanGrave/refs/heads/main/Place_Coop_V7",--place unit
+        "https://raw.githubusercontent.com/mrratjal9-cloud/TamanGrave/refs/heads/main/Place_Coop_V9",--place unit
         "https://raw.githubusercontent.com/mrratjal9-cloud/TamanGrave/refs/heads/main/AutoReplay_Map_Grave_V4",-- replay, jalan, speed, skip
         "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/LowGrafik_V12",-- low
         "https://raw.githubusercontent.com/mrratjal9-cloud/taman/refs/heads/main/ANTI_AFK",
